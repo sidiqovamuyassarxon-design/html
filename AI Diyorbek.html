@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AI Diyorbek</title>
+<style>
+:root{--bg:#07060f;--bg2:#120f26;--card:#1a1634;--line:#2e2859;--tx:#ecebff;--mut:#9a96c8;--ac:#7c5cff;--ac2:#22d3ee;--me:#3b2fa0;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:dark}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){--bg:#f4f3ff;--bg2:#e6e3ff;--card:#fff;--line:#d3cef5;--tx:#1b1740;--mut:#6a65a0;--me:#dcd6ff;color-scheme:light}}
+:root[data-theme="light"]{--bg:#f4f3ff;--bg2:#e6e3ff;--card:#fff;--line:#d3cef5;--tx:#1b1740;--mut:#6a65a0;--me:#dcd6ff;color-scheme:light}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:radial-gradient(1200px 600px at 50% -10%,var(--bg2),var(--bg));color:var(--tx);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;max-width:860px;margin:0 auto}
+header{text-align:center;padding:10px 16px 0}
+h1{margin:0;font-size:1.35rem;letter-spacing:.5px;background:linear-gradient(90deg,var(--ac),var(--ac2));-webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{color:var(--mut);font-size:.82rem}
+#stage{height:30vh;min-height:170px;position:relative}
+#c{width:100%;height:100%;display:block}
+#msgs{flex:1;overflow-y:auto;padding:8px 14px;display:flex;flex-direction:column;gap:10px}
+.m{max-width:86%;padding:10px 14px;border-radius:16px;white-space:pre-wrap;word-wrap:break-word;border:1px solid var(--line)}
+.m.ai{align-self:flex-start;background:var(--card);border-bottom-left-radius:4px}
+.m.me{align-self:flex-end;background:var(--me);border-bottom-right-radius:4px}
+.m img{max-width:180px;max-height:140px;border-radius:10px;display:block;margin:0 0 6px}
+.dots::after{content:"…";animation:b 1s infinite}@keyframes b{50%{opacity:.2}}
+#chips{display:flex;gap:8px;flex-wrap:wrap;padding:0 14px 6px}
+.chip{background:var(--card);border:1px solid var(--line);color:var(--tx);border-radius:999px;padding:6px 12px;font-size:.85rem;cursor:pointer}
+#att{display:flex;gap:6px;flex-wrap:wrap;padding:0 14px}
+#att span{background:var(--card);border:1px solid var(--ac);border-radius:8px;padding:2px 8px;font-size:.8rem;cursor:pointer}
+form-row,#bar{display:flex;gap:8px;padding:10px 14px 14px;align-items:flex-end}
+#inp{flex:1;resize:none;max-height:120px;min-height:44px;background:var(--card);color:var(--tx);border:1px solid var(--line);border-radius:14px;padding:10px 12px;font:inherit}
+#inp:focus{outline:2px solid var(--ac)}
+.btn{width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--tx);font-size:1.1rem;cursor:pointer;flex:none}
+#send{background:linear-gradient(135deg,var(--ac),var(--ac2));border:0;color:#fff}
+.btn:disabled{opacity:.5;cursor:default}
+.rec{background:#e5484d!important;color:#fff}
+</style>
+</head>
+<body>
+<header><h1>AI Diyorbek</h1><div class="sub">Suhbat · rasm · fayl</div></header>
+<div id="stage"><canvas id="c"></canvas></div>
+<div id="msgs"></div>
+<div id="chips"></div>
+<div id="att"></div>
+<div id="bar">
+  <button class="btn" id="clip" title="Rasm yoki fayl">📎</button>
+  <input type="file" id="file" multiple accept="image/*,.txt,.md,.csv,.json,.js,.py,.html,.css" hidden>
+  <textarea id="inp" rows="1" placeholder="Diyorbekka yozing…"></textarea>
+  <button class="btn" id="mic" title="Ovoz" hidden>🎤</button>
+  <button class="btn" id="send" title="Yuborish">➤</button>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+var $=function(s){return document.querySelector(s)};
+var msgs=$('#msgs'),inp=$('#inp'),sendB=$('#send'),fileIn=$('#file'),att=$('#att'),mic=$('#mic');
+var history=[],pending=[],busy=false,dict=null;
+var SYS="Sen «AI Diyorbek» — do’stona, aqlli va aniq javob beradigan sun’iy intellekt yordamchisan. Foydalanuvchi qaysi tilda yozsa (o’zbek, rus, ingliz), o’sha tilda javob ber. Javoblar qisqa, foydali va tushunarli bo’lsin. Rasm yoki fayl berilsa, uni diqqat bilan tahlil qil.";
+
+/* ---------- 3D orb ---------- */
+var setMode=function(){};
+try{
+  var stage=$('#stage'),cv=$('#c');
+  var R=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true});
+  R.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+  var S=new THREE.Scene(),C=new THREE.PerspectiveCamera(45,1,.1,100);C.position.z=4.2;
+  var g=new THREE.IcosahedronGeometry(1.2,5),base=g.attributes.position.array.slice();
+  var mat=new THREE.MeshBasicMaterial({color:0x7c5cff,wireframe:true,transparent:true,opacity:.6});
+  var orb=new THREE.Mesh(g,mat);S.add(orb);
+  var core=new THREE.Mesh(new THREE.SphereGeometry(.85,32,32),new THREE.MeshBasicMaterial({color:0x22d3ee,transparent:true,opacity:.2}));S.add(core);
+  var N=450,sp=new Float32Array(N*3);for(var i=0;i<N*3;i++)sp[i]=(Math.random()-.5)*14;
+  var sg=new THREE.BufferGeometry();sg.setAttribute('position',new THREE.BufferAttribute(sp,3));
+  var stars=new THREE.Points(sg,new THREE.PointsMaterial({color:0x9a96c8,size:.025}));S.add(stars);
+  var amp=.08,tAmp=.08,spd=.6,tSpd=.6;
+  setMode=function(m){
+    if(m==='think'){tAmp=.24;tSpd=2.4;mat.color.setHex(0xff5ca8);core.material.color.setHex(0xff9f43)}
+    else if(m==='talk'){tAmp=.14;tSpd=1.4;mat.color.setHex(0x22d3ee);core.material.color.setHex(0x7c5cff)}
+    else{tAmp=.08;tSpd=.6;mat.color.setHex(0x7c5cff);core.material.color.setHex(0x22d3ee)}
+  };
+  var rs=function(){var w=stage.clientWidth,h=stage.clientHeight;R.setSize(w,h,false);C.aspect=w/h;C.updateProjectionMatrix()};
+  window.addEventListener('resize',rs);rs();
+  var tick=function(t){
+    t*=.001;amp+=(tAmp-amp)*.05;spd+=(tSpd-spd)*.05;
+    var p=g.attributes.position.array;
+    for(var i=0;i<p.length;i+=3){
+      var x=base[i],y=base[i+1],z=base[i+2];
+      var d=1+amp*(Math.sin(x*3+t*spd*3)+Math.sin(y*4+t*spd*2.3)+Math.sin(z*3.5+t*spd*2.7))*.66;
+      p[i]=x*d;p[i+1]=y*d;p[i+2]=z*d;
+    }
+    g.attributes.position.needsUpdate=true;
+    orb.rotation.y=t*.15*(1+spd);orb.rotation.x=Math.sin(t*.3)*.2;
+    core.scale.setScalar(1+Math.sin(t*2*spd)*.06);stars.rotation.y=t*.02;
+    R.render(S,C);requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}catch(e){var st=$('#stage');if(st)st.style.display='none'}
+
+/* ---------- chat UI ---------- */
+function add(role,text,imgs){
+  var d=document.createElement('div');d.className='m '+role;
+  (imgs||[]).forEach(function(u){var im=document.createElement('img');im.src=u;d.appendChild(im)});
+  var s=document.createElement('span');s.textContent=text||'';d.appendChild(s);
+  msgs.appendChild(d);msgs.scrollTop=msgs.scrollHeight;return s;
+}
+add('ai','Salom! Men AI Diyorbekman. Menga savol bering, rasm yoki fayl yuboring — birga ishlaymiz.');
+['Kosmos haqida qiziq fakt ayt','Menga kod yozishda yordam ber','Matnni tarjima qilishga yordam ber'].forEach(function(t){
+  var b=document.createElement('button');b.className='chip';b.textContent=t;
+  b.onclick=function(){inp.value=t;send()};$('#chips').appendChild(b);
+});
+function drawAtt(){
+  att.innerHTML='';
+  pending.forEach(function(f,i){var s=document.createElement('span');s.textContent='📄 '+f.name+' ✕';s.onclick=function(){pending.splice(i,1);drawAtt()};att.appendChild(s)});
+}
+$('#clip').onclick=function(){fileIn.click()};
+fileIn.onchange=function(){for(var i=0;i<fileIn.files.length;i++)pending.push(fileIn.files[i]);fileIn.value='';drawAtt()};
+inp.addEventListener('input',function(){inp.style.height='auto';inp.style.height=Math.min(inp.scrollHeight,120)+'px'});
+inp.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}});
+sendB.onclick=send;
+
+/* ---------- AI ---------- */
+async function send(){
+  var text=inp.value.trim();
+  if(busy||(!text&&!pending.length))return;
+  var files=pending.slice(),blobs=[],urls=[],extra='';
+  var sample=null;
+  try{sample=window.claude?await window.claude.use('sample'):null}catch(e){}
+  if(!sample){add('ai','Kechirasiz, AI bu yerda hozircha mavjud emas. Sahifani claude.ai orqali oching.');return}
+  var canImg=false;try{canImg=!!(await sample.limits()).images}catch(e){}
+  var skipped=[];
+  for(var i=0;i<files.length;i++){
+    var f=files[i];
+    if(f.type.indexOf('image/')===0){if(canImg){blobs.push(f);urls.push(URL.createObjectURL(f))}else skipped.push(f.name)}
+    else if(f.size<400000){try{extra+='\n\n[Fayl: '+f.name+']\n'+(await f.text()).slice(0,30000)}catch(e){skipped.push(f.name)}}
+    else skipped.push(f.name);
+  }
+  busy=true;sendB.disabled=true;pending=[];drawAtt();inp.value='';inp.style.height='auto';$('#chips').style.display='none';
+  var shown=text||(files.length?'Fayl yubordim':'');
+  if(files.length)shown+=(shown?'\n':'')+'📎 '+files.map(function(f){return f.name}).join(', ');
+  add('me',shown,urls);
+  var content=(text||'Ilova qilingan rasm/faylni tahlil qil.')+extra;
+  history.push({role:'user',content:content});
+  var arr=history.map(function(h){return{role:h.role,content:h.content}});
+  arr[0].content=SYS+'\n\n'+arr[0].content;
+  var out=add('ai','');out.className='dots';setMode('think');
+  try{
+    var opts={cache:false,onText:function(o){out.className='';out.textContent=o.text;setMode('talk');msgs.scrollTop=msgs.scrollHeight}};
+    if(blobs.length)opts.images=blobs;
+    var r=await sample(arr,opts);
+    out.className='';out.textContent=r.text;
+    history.push({role:'assistant',content:r.text});
+    if(skipped.length)add('ai','Eslatma: bu fayllarni o’qiy olmadim: '+skipped.join(', '));
+  }catch(e){
+    out.className='';history.pop();
+    out.textContent=e&&e.code==='not_granted'?'AI’dan foydalanish uchun ruxsat kerak. Qayta urinib ko’ring va ruxsat bering.':e&&e.code==='rate_limited'?'So’rovlar ko’p. Birozdan keyin urinib ko’ring.':'Xatolik yuz berdi. Qayta urinib ko’ring.';
+  }
+  setMode('idle');busy=false;sendB.disabled=false;inp.focus();
+}
+
+/* ---------- voice (optional) ---------- */
+(async function(){
+  try{
+    dict=window.claude?await window.claude.use('dictation'):null;
+    if(!dict)return;
+    mic.hidden=false;
+    dict.onFinal(function(o){inp.value=(inp.value?inp.value+' ':'')+o.text});
+    dict.onState(function(s){mic.classList.toggle('rec',s.state==='listening')});
+    mic.onclick=function(){
+      if(mic.classList.contains('rec')){dict.stop();return}
+      dict.start().catch(function(){});
+    };
+  }catch(e){}
+})();
+})();
+</script>
+</body>
+</html>
